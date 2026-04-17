@@ -23,6 +23,7 @@
 | Ask endpoint | Wrapped as a tool, exposed to Claude. |
 | Statblock format | Plain markdown via `content` only. Do **not** send `content_rich` until we have a verified Lexical example from Archivist's own export. |
 | Compendium tiers | None. Whether to create a mechanics journal is a single boolean: did the caller pass a `mechanics` payload? |
+| Item categorization | Coarse: `Item.type` validated against Archivist's closed enum (Weapon, Armor, Shield, Tool, Potion, Scroll, Consumable, Artifact, Wondrous Item, Device). Fine: free-form `tags` on the mechanics journal. |
 | Cast-analysis in summaries | Opt-in per call. Tool checks whether `cast-analysis` exists for the session before fetching (some sessions, e.g. play-by-post, won't have it). |
 | Quest updates on session commit | Out of scope. Archivist already updates quests automatically when sessions are uploaded; we don't duplicate that. |
 | Summary versioning | Archive prior summary to a `Summary History/` journal folder **only when overwriting an existing summary**. First-time commits are not archived. |
@@ -102,6 +103,11 @@ Total surface: **10 tools**. Kept tight on purpose.
 | `prep-next-session` | Reads quests + last session + open beats, drafts GM prep notes (does not write back). |
 | `register-found-item` | Asks the user for narrative description, then asks "does this item have mechanics worth a statblock?" — if yes, prompts for the mechanics fields and calls `register_item` with them. |
 | `summarize-faction-arc(faction_id)` | Pulls a faction + linked beats/moments/characters/quests, drafts an arc summary. |
+| `character-arc(character_id)` | Same shape as faction arc, for a PC or NPC. Narrative-oriented, shareable. Uses for: retirement write-ups, recaps for late-joining players, "remind me what my character has been through." |
+| `location-gazetteer(location_id)` | Pulls a location + linked NPCs/factions/items/events. For refresher before the party returns somewhere. |
+| `npc-dossier(character_id)` | **Prep-oriented**, not narrative. Intended for GM's eyes before an imminent scene: motivations, what they know, alignments, last interaction, unresolved threads. Contrast with `character-arc` which is shareable. |
+| `loose-ends` | Scans active quests with no recent beats, raised-but-unresolved mysteries, NPCs not seen in N sessions, items found but never used. Drafts a dangling-threads report. |
+| `player-brief(asker_id)` | Thin wrapper over `ask_archivist` with `asker_id` set and `gm_permissions=false`, pre-phrased as "what does my character currently know about …". Makes permission-scoped asking discoverable for players. |
 
 ## Workflows
 
@@ -147,11 +153,18 @@ First-time commits (no prior summary) skip the archive step. The intent is a pap
 
 Two layers, but **only one decision**: did the caller pass a `mechanics` payload?
 
-**Layer 1 — Item entity** (always created). Narrative description, `type` field uses Archivist's existing categories ("weapon", "wondrous item", etc.). If a mechanics journal was created, the description ends with `See mechanics: [[{Name} — Mechanics]]`.
+**Layer 1 — Item entity** (always created). Narrative description plus a `type` field. `Item.type` is a closed enum — the Archivist UI exposes exactly these values:
 
-**Layer 2 — Journal Entry** in the mechanics folder (created only when `mechanics` is provided). Full statblock as plain-text markdown sent via `content`. Tagged with caller-supplied `tags` (free-form, e.g. `["weapon", "homebrew", "cursed", "attunement"]`) plus an automatic `"mechanics"` tag for filtering. Includes `Linked to [[{Name}]]` for the wikilink back.
+```
+Weapon · Armor · Shield · Tool · Potion · Scroll ·
+Consumable · Artifact · Wondrous Item · Device
+```
 
-**No tier enum.** Categorization comes from Archivist's existing `Item.type` and free-form journal `tags`. The branching logic in `register_item` is just `if mechanics is not None: create_journal(...)`.
+The API docs show lowercase on the wire (`"type": "weapon"`), so we'll send lowercase; the `"Wondrous Item"` wire format (space vs. underscore vs. hyphen) needs to be confirmed with a real request before we finalize. `register_item` validates `type` against this enum client-side and rejects unknown values early with a clear error, rather than letting Archivist 422. If a mechanics journal was created, the description ends with `See mechanics: [[{Name} — Mechanics]]`.
+
+**Layer 2 — Journal Entry** in the mechanics folder (created only when `mechanics` is provided). Full statblock as plain-text markdown sent via `content`. Tagged with caller-supplied `tags` (free-form, e.g. `["homebrew", "cursed", "attunement"]`) plus two automatic tags: `"mechanics"` and the Item's `type` value lowercased. The `type` tag mirror lets RAG filter by item category without re-joining against the Item entity. Finer categorization that `Item.type` doesn't capture — "cursed", "homebrew", "attunement-required" — lives here on free-form tags. Includes `Linked to [[{Name}]]` for the wikilink back.
+
+**No tier enum.** Coarse categorization is `Item.type` (closed 10-value enum). Fine categorization is free-form journal `tags`. The branching logic in `register_item` is just `if mechanics is not None: create_journal(...)`.
 
 **What we don't store:** generic SRD items players never engage with (torches, basic longswords, mundane gear). Claude/Ask-Archivist already knows the rules; storing them pollutes RAG without adding value. The user (or Claude on the user's behalf) decides item-by-item what's worth registering.
 
@@ -283,8 +296,9 @@ archivistdnd/
 ## Open questions (deferred, not blocking v1)
 
 1. **In-app rendering of markdown statblocks** — once we run a real `register_item` call, inspect how the journal entry looks in the Archivist app. If it's ugly enough to bother the user, export a similar journal entry the user has hand-built in the app, copy its `content_rich` shape as a Lexical template, and switch to sending both fields.
-2. **Mechanics field shape** — `register_item(mechanics=...)` payload structure. Loose dict vs. a typed Pydantic model (`damage`, `properties`, `mastery`, `attunement`, `rarity`, `notes`). Typed is better for the template; loose is more forgiving for one-off weird items. Probably typed-with-an-`extra` dict.
-3. **Rename handling** — Item rename should propagate to the linked journal title and update wikilinks in both directions. Unclear whether Archivist's wikilink sync handles renames or only initial linking. Test before committing to a rename tool.
+2. **`Item.type` wire format for multi-word values** — UI shows "Wondrous Item"; API shows lowercase singletons ("weapon"). Probe with a POST to confirm whether the wire format is `"wondrous item"`, `"wondrous_item"`, `"wondrous-item"`, or something else, and bake the mapping into the client.
+3. **Mechanics field shape** — `register_item(mechanics=...)` payload structure. Loose dict vs. a typed Pydantic model (`damage`, `properties`, `mastery`, `attunement`, `rarity`, `notes`). Typed is better for the template; loose is more forgiving for one-off weird items. Probably typed-with-an-`extra` dict.
+4. **Rename handling** — Item rename should propagate to the linked journal title and update wikilinks in both directions. Unclear whether Archivist's wikilink sync handles renames or only initial linking. Test before committing to a rename tool.
 
 ## Build order
 
