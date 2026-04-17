@@ -22,6 +22,9 @@ async def health_check() -> dict[str, Any]:
     stats = await client.get(f"/v1/campaigns/{client.campaign_id}/stats")
     return {
         "api_health": api_health,
-        "campaign": {"id": campaign["id"], "name": campaign.get("name")},
+        "campaign": {"id": campaign["id"], "title": campaign.get("title")},
         "stats": stats,
     }
+
+
+from . import resources as _resources  # noqa: E402, F401 — registers @mcp.resource decorators
