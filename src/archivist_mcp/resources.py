@@ -1,7 +1,6 @@
 from typing import Any
 
-import httpx
-
+from .client import ArchivistUpstreamError
 from .projections import project_list_payload, pagination_params
 from .server import client, mcp
 from .validation import ProjectionKind
@@ -90,8 +89,8 @@ async def session_cast_analysis_resource(session_id: str) -> dict[str, Any]:
     """
     try:
         data = await client.get(f"/v1/sessions/{session_id}/cast-analysis")
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 404:
+    except ArchivistUpstreamError as exc:
+        if exc.status_code == 404:
             return {"cast_analysis": None}
         raise
     return {"cast_analysis": data}

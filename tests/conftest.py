@@ -55,6 +55,7 @@ def _register_default_api_routes(httpx_mock: Any) -> None:
     def add(method: str, path: str, **kwargs: Any) -> None:
         httpx_mock.add_response(method=method, url=f"{base}{path}", **kwargs)
 
+    add("GET", "/health", json={"status": "ok"})
     add("GET", f"/v1/campaigns/{cid}", json=load_fixture("campaign", "detail"))
     add("GET", f"/v1/campaigns/{cid}/stats", json=load_fixture("campaign", "stats"))
     q_links = urlencode({"page": 1, "page_size": 50})
@@ -137,6 +138,11 @@ async def archivist_http_mock(httpx_mock: Any) -> AsyncIterator[None]:
     new_client = ArchivistClient(srv.config)
     srv.client = new_client
     res.client = new_client
+    import archivist_mcp.tools.ask as ask_mod
+    import archivist_mcp.tools.search as search_mod
+
+    search_mod.client = new_client
+    ask_mod.client = new_client
 
     _register_default_api_routes(httpx_mock)
 

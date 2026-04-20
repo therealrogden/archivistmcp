@@ -7,9 +7,9 @@ import os
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
-import httpx
 import pytest
 
+from archivist_mcp.client import ArchivistUpstreamError
 from archivist_mcp.projections import project_list_payload
 from archivist_mcp.resources import (
     beat_resource,
@@ -200,9 +200,9 @@ async def test_journal_folder_resource() -> None:
 
 @pytest.mark.asyncio
 async def test_beat_unknown_id_surfaces_404() -> None:
-    with pytest.raises(httpx.HTTPStatusError) as excinfo:
+    with pytest.raises(ArchivistUpstreamError) as excinfo:
         await beat_resource(UNKNOWN_ID)
-    assert excinfo.value.response.status_code == 404
+    assert excinfo.value.status_code == 404
 
 
 @pytest.mark.asyncio
