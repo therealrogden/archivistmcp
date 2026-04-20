@@ -19,12 +19,16 @@ async def ask_archivist(
     gm_permissions: bool = False,
     ctx: Context = None,  # type: ignore[assignment]  # injected by FastMCP at call time
 ) -> dict[str, Any]:
-    """RAG question against the configured campaign. Streams token text via MCP progress.
+    """RAG question against the configured campaign.
 
-    When the host sends a progress token, each upstream text chunk is reported in order
-    through ``ctx.report_progress``. The return value contains the full assembled answer and
-    token budget fields from Archivist (e.g. ``monthlyTokensRemaining`` / ``hourlyTokensRemaining``)
-    nested under ``tokens``.
+    Upstream streams ``text/plain`` markdown over HTTP chunked encoding. When the MCP client
+    sends a ``progressToken`` on ``tools/call``, each decoded text chunk is reported in order
+    via ``ctx.report_progress``; without a progress token those calls are a no-op and the
+    tool still returns the full ``answer`` when the stream completes.
+
+    Returns ``{"answer": "<assembled markdown>", "tokens": {...}}``. Token budgets use
+    snake_case keys ``monthly_tokens_remaining`` and ``hourly_tokens_remaining`` (sourced from
+    response headers when streaming; JSON-shaped stream lines can override those values).
     """
     body: dict[str, Any] = {
         "campaign_id": client.campaign_id,

@@ -71,6 +71,45 @@ def _token_fields_from_obj(obj: dict[str, Any]) -> dict[str, Any]:
     return {k: obj[k] for k in keys if k in obj}
 
 
+def _ask_token_budget_from_headers(headers: httpx.Headers) -> dict[str, int]:
+    """Parse Archivist streaming ``/v1/ask`` token budgets from response headers (int or skip)."""
+    out: dict[str, int] = {}
+    mapping = (
+        ("x-monthly-remaining-tokens", "monthly_tokens_remaining"),
+        ("x-hourly-remaining-tokens", "hourly_tokens_remaining"),
+    )
+    for header_name, key in mapping:
+        raw = headers.get(header_name)
+        if raw is None:
+            continue
+        try:
+            out[key] = int(str(raw).strip())
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def _normalize_stream_token_update(tok: dict[str, Any]) -> dict[str, Any]:
+    """Map JSON token fields to snake_case budget keys; pass through other known keys."""
+    if not tok:
+        return {}
+    out: dict[str, Any] = {}
+    for src, dst in (
+        ("monthlyTokensRemaining", "monthly_tokens_remaining"),
+        ("hourlyTokensRemaining", "hourly_tokens_remaining"),
+    ):
+        if src not in tok:
+            continue
+        try:
+            out[dst] = int(tok[src])  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            pass
+    for k in ("input_tokens", "output_tokens", "total_tokens"):
+        if k in tok:
+            out[k] = tok[k]
+    return out
+
+
 def _text_deltas_from_json_obj(obj: Any) -> list[str]:
     """Best-effort extraction of streamed assistant text from Archivist / OpenAI-like shapes."""
     if isinstance(obj, str) and obj:
@@ -98,7 +137,13 @@ def _text_deltas_from_json_obj(obj: Any) -> list[str]:
 
 
 def _parse_ask_stream_line(line: str) -> tuple[list[str], dict[str, Any]]:
-    """One SSE or NDJSON line → text chunks and token-field updates."""
+    """Parse one line of ``/v1/ask`` stream output.
+
+    Live Archivist streams ``text/plain`` markdown with ``\\n``-separated lines over HTTP
+    chunking; that path is primary (non-JSON lines return as literal text). ``aiter_lines()``
+    yields natural progress granularity; long chunks without ``\\n`` coarsen progress only.
+    SSE ``data:`` prefixes and JSON lines are retained for compatibility / future shapes.
+    """
     s = line.strip()
     if not s:
         return [], {}
@@ -317,9 +362,11 @@ class ArchivistClient:
                         uri=uri,
                         body=self._response_body_snippet(response),
                     )
+                merged_tokens = dict(_ask_token_budget_from_headers(response.headers))
                 async for line in response.aiter_lines():
                     text_parts, tok = _parse_ask_stream_line(line)
-                    merged_tokens.update(tok)
+                    # Headers seed at accept; JSON token fields on streamed lines override.
+                    merged_tokens.update(_normalize_stream_token_update(tok))
                     for part in text_parts:
                         yield part
                 duration_ms = (time.perf_counter() - t0) * 1000
