@@ -1,0 +1,15 @@
+{
+  "data": [
+    {
+      "from_id": "55555555-5555-5555-5555-555555555555",
+      "from_type": "character",
+      "to_id": "77777777-7777-7777-7777-777777777777",
+      "to_type": "faction",
+      "alias": "member"
+    }
+  ],
+  "page": 1,
+  "size": 20,
+  "pages": 1,
+  "total": 1
+}

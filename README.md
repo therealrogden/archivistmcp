@@ -58,3 +58,12 @@ Before step 14 starts:
 3. Mark Open Questions #2 and #3 as closed with pointers to the recorded
    evidence entry.
 4. Keep the generated report artifacts for auditability.
+
+## Tests
+
+Install dev dependencies and run the suite:
+
+```bash
+pip install -e ".[dev]"
+pytest
+```

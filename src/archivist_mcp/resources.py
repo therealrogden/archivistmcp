@@ -17,12 +17,6 @@ async def campaign_stats_resource() -> dict[str, Any]:
     return await client.get(f"/v1/campaigns/{client.campaign_id}/stats")
 
 
-@mcp.resource("archivist://campaigns")
-async def campaigns_list_resource() -> dict[str, Any]:
-    """All campaigns visible to this API key (paginated)."""
-    return await client.get("/v1/campaigns")
-
-
 @mcp.resource("archivist://campaign/links")
 async def campaign_links_resource() -> dict[str, Any]:
     """Entity graph links for the configured campaign (paginated)."""
