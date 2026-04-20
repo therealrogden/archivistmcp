@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Annotated, Any, Literal, TypeAlias
 from uuid import UUID
 
-from pydantic import AfterValidator, BeforeValidator, Field, PlainSerializer
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, PlainSerializer
 from pydantic_core import PydanticCustomError
 
 # --- sizes (DESIGN.md) ---
@@ -57,6 +57,28 @@ def _validate_short_text(v: str) -> str:
     if len(v) > _SHORT_TEXT_MAX:
         raise PydanticCustomError("string_too_long", "text exceeds maximum length")
     return v
+
+
+def _validate_nonempty_short_text(v: str) -> str:
+    """Search / ask query: non-whitespace, max 1 KB (DESIGN short-text cap)."""
+    if not isinstance(v, str):
+        raise PydanticCustomError("type_error", "expected string")
+    if not v.strip():
+        raise PydanticCustomError("empty_str", "Must not be empty or whitespace-only")
+    if len(v) > _SHORT_TEXT_MAX:
+        raise PydanticCustomError("string_too_long", "text exceeds maximum length")
+    return v
+
+
+def _validate_optional_asker_id(v: str | None) -> str | None:
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    if len(s) > _SHORT_TEXT_MAX:
+        raise PydanticCustomError("string_too_long", "asker_id exceeds maximum length")
+    return s
 
 
 def _validate_tags(v: list[str]) -> list[str]:
@@ -183,12 +205,62 @@ ProjectionKind: TypeAlias = Literal[
     "journal_folder",
 ]
 
+# Kinds returned by GET /v1/search (DESIGN.md search_entities); maps 1:1 to ProjectionKind.
+EntityKind: TypeAlias = Literal["character", "item", "faction", "location", "quest", "journal"]
+
+
+class SearchFilters(BaseModel):
+    """Typed filter bag for lexical search; unknown keys are rejected (``extra='forbid'``).
+
+    Values are forwarded as query parameters to ``GET /v1/search`` when set.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    is_player: bool | None = Field(default=None, description="Filter characters where type is PC.")
+    has_summary: bool | None = Field(
+        default=None,
+        description="Filter sessions with a non-empty summary (searchable session rows only).",
+    )
+    has_mechanics: bool | None = Field(
+        default=None, description="Filter items that include a non-empty mechanics object."
+    )
+    completion_pct_gte: int | None = Field(
+        default=None, ge=0, le=100, description="Minimum quest objective completion percent."
+    )
+    status: str | None = Field(
+        default=None,
+        description="Filter by status (e.g. quest status); max 1 KB.",
+        max_length=_SHORT_TEXT_MAX,
+    )
+
+
+NonEmptySearchStr = Annotated[
+    str,
+    Field(description="Non-empty search string; max 1 KB."),
+    AfterValidator(_validate_nonempty_short_text),
+]
+
+AskerIdStr = Annotated[
+    str | None,
+    Field(
+        default=None,
+        description="Optional Archivist user id to scope journal access for /v1/ask.",
+    ),
+    AfterValidator(_validate_optional_asker_id),
+]
+
 __all__ = [
     "AliasStr",
+    "AskerIdStr",
     "ContentStr",
+    "EntityKind",
     "ItemType",
     "ItemTypeField",
     "MechanicsDict",
+    "NonEmptySearchStr",
+    "ProjectionKind",
+    "SearchFilters",
     "ShortNameStr",
     "ShortTitleStr",
     "TagsList",
@@ -196,5 +268,4 @@ __all__ = [
     "canonical_json",
     "mechanics_signature",
     "parse_item_type",
-    "ProjectionKind",
 ]

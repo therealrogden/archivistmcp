@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "kind": "character",
+      "id": "55555555-5555-5555-5555-555555555555",
+      "campaign_id": "00000000-0000-0000-0000-00000000c001",
+      "name": "Scrubbed Character",
+      "type": "PC",
+      "player": null
+    },
+    {
+      "kind": "item",
+      "id": "66666666-6666-6666-6666-666666666666",
+      "campaign_id": "00000000-0000-0000-0000-00000000c001",
+      "name": "Scrubbed Item",
+      "type": "weapon",
+      "description": "Placeholder item description.",
+      "mechanics": { "attunement": false }
+    },
+    {
+      "kind": "faction",
+      "id": "77777777-7777-7777-7777-777777777777",
+      "campaign_id": "00000000-0000-0000-0000-00000000c001",
+      "name": "Scrubbed Faction",
+      "alignment": "neutral"
+    }
+  ]
+}

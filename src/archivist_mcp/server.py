@@ -28,3 +28,5 @@ async def health_check() -> dict[str, Any]:
 
 
 from . import resources as _resources  # noqa: E402, F401 — registers @mcp.resource decorators
+from .tools import ask as _ask_tool  # noqa: E402, F401 — registers ask_archivist
+from .tools import search as _search_tool  # noqa: E402, F401 — registers search_entities
