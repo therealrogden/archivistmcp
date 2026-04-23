@@ -206,16 +206,17 @@ def project_slim(entity: dict[str, Any], kind: ProjectionKind) -> dict[str, Any]
     if kind == "beat":
         return {
             "id": entity["id"],
-            "title": entity.get("title"),
+            "title": entity.get("label"),
             "session_id": beat_session_id(entity),
-            "sequence": entity.get("sequence"),
+            "sequence": entity.get("index"),
             "is_root": is_root_beat(entity),
         }
     if kind == "moment":
         return {
             "id": entity["id"],
             "session_id": entity.get("session_id"),
-            "timestamp": entity.get("timestamp"),
+            "label": entity.get("label"),
+            "index": entity.get("index"),
             "content_excerpt": content_excerpt(entity.get("content")),
         }
     if kind == "journal":

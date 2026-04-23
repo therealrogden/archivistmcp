@@ -54,9 +54,9 @@ def _keys(kind: ProjectionKind) -> set[str]:
     elif kind == "location":
         e = {"id": "1", "name": "L", "parent_id": None}
     elif kind == "beat":
-        e = {"id": "1", "title": "B", "sequence": 1, "game_session_id": "s"}
+        e = {"id": "1", "label": "B", "index": 1, "game_session_id": "s"}
     elif kind == "moment":
-        e = {"id": "1", "session_id": "s", "timestamp": "t", "content": ""}
+        e = {"id": "1", "session_id": "s", "label": "M", "index": 0, "content": ""}
     elif kind == "journal":
         e = {"id": "1", "title": "J", "folder_id": "f", "updated_at": None, "tags": []}
     elif kind == "journal_folder":
@@ -86,7 +86,7 @@ def _keys(kind: ProjectionKind) -> set[str]:
         ("faction", {"id", "name", "alignment"}),
         ("location", {"id", "name", "is_root"}),
         ("beat", {"id", "title", "session_id", "sequence", "is_root"}),
-        ("moment", {"id", "session_id", "timestamp", "content_excerpt"}),
+        ("moment", {"id", "session_id", "label", "index", "content_excerpt"}),
         ("journal", {"id", "title", "folder_id", "updated_at", "tags"}),
         ("journal_folder", {"id", "name", "parent_id", "is_root"}),
     ],
@@ -191,6 +191,18 @@ def test_beat_is_root() -> None:
     assert is_root_beat({"parent_beat_id": None, "parent_id": None}) is True
     assert is_root_beat({"parent_beat_id": "x"}) is False
     assert is_root_beat({"parent_id": "y"}) is False
+
+
+def test_project_slim_moment_content_excerpt_from_detail_content() -> None:
+    m = {
+        "id": "1",
+        "session_id": "s",
+        "label": "L",
+        "index": 2,
+        "content": "hello " * 50,
+    }
+    slim = project_slim(m, "moment")
+    assert slim["content_excerpt"] == content_excerpt("hello " * 50)
 
 
 def test_content_excerpt_boundaries() -> None:

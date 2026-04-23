@@ -3,8 +3,8 @@
     {
       "id": "33333333-3333-3333-3333-333333333333",
       "session_id": "11111111-1111-1111-1111-111111111111",
-      "timestamp": "2026-01-01T01:00:00Z",
-      "content": "Scrubbed moment content."
+      "label": "Scrubbed Moment",
+      "index": 1
     }
   ],
   "page": 1,

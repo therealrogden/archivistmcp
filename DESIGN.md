@@ -30,7 +30,7 @@
 | Resource list shape | Slim lists only. Every list resource returns `id`, `name`/`title`, `type` where applicable, `tags` where applicable, and `updated_at`, plus a small set of type-specific extensions. Full entity records are available exclusively via `{id}` resources. Rationale: a campaign with 100 NPCs must not cost 50k tokens to browse. |
 | Pagination | List resources accept `page`, `page_size` (capped at 50), and `cursor` where the API supports it. Unparameterized fetches return the first page only — no silent multi-page aggregation. Claude pages explicitly when it needs more. |
 | Discovery path | `search_entities` is the primary discovery surface for "find the X with property Y". List resources exist for browsing and paging, not searching. |
-| Composites | Composites live in **tools**, not resources. E.g. `draft_session_summary` internally fetches session + beats + moments + cast-analysis; `archivist://session/{id}` returns only session metadata. Resources stay single-responsibility so Claude (and caches) can reason about their cost. |
+| Composites | Composites live in **tools**, not resources. E.g. `read_session` optionally fans out beats, moments, and cast-analysis; `archivist://session/{id}` returns only session metadata. Resources stay single-responsibility so Claude (and caches) can reason about their cost. |
 | Error handling | Exponential backoff with jitter on `GET` (2 retries max, on 429 / 5xx). Fail-fast on `POST`/`PATCH`/`DELETE` — no retries on writes. Upstream errors surface as raw MCP tool errors with status + response body so Claude can reason about the failure. |
 | Caching | In-process TTL cache. 60 s for list URIs, 5 min for detail URIs, no cache on `search_entities`. Tool writes synchronously invalidate affected URI prefixes before returning. |
 | Input validation | Pydantic on every tool input via `Annotated[Type, Field(description="…")]`. String fields capped (50 KB for `content`, 1 KB for names/titles). Path IDs validated as UUIDs before any API call. No output validation — trust upstream shapes. |
@@ -51,11 +51,11 @@
 └────────────────┘              └─────────────────────────┘              └──────────────────────┘
                                   │
                                   ├── Resources (read-only views)
-                                  ├── Tools (draft / commit / ask)
+                                  ├── Tools (read / commit / ask)
                                   └── Prompts (DM workflow templates)
 ```
 
-Single process, single API key, single campaign. The server is a thin adapter: HTTP client + schema typing + a few **tool-level** composite operations (e.g. `draft_session_summary`) that bundle multiple REST calls into one MCP tool call. Resources stay single-responsibility — composites never live in the resource layer.
+Single process, single API key, single campaign. The server is a thin adapter: HTTP client + schema typing + **tool-level** composite reads (e.g. `read_session`, `read_campaign_session_summaries`) that bundle multiple REST calls into one MCP tool call when needed. Resources stay single-responsibility — composites never live in the resource layer.
 
 ### Why FastMCP v2
 
@@ -108,20 +108,20 @@ Resources are partitioned into **slim list views** and **full-detail single-enti
 | `archivist://journal-folders` | `GET /v1/journal-folders?campaign_id=…` | slim list | Folder tree for placement |
 | `archivist://journal-folder/{id}` | `GET /v1/journal-folders/{id}` | full | Single folder |
 
-**Slim list shape.** Every list resource returns a page of objects with a small, predictable set of fields. The base shape varies slightly by entity because the Archivist API is not uniform — only journals / quests / journal-folders carry `updated_at`, only journals carry `tags`, moments return their full `content` in list responses (which we truncate), and so on. Rather than invent fields, we project what the API actually returns.
+**Slim list shape.** Every list resource returns a page of objects with a small, predictable set of fields. The base shape varies slightly by entity because the Archivist API is not uniform — only journals / quests / journal-folders carry `updated_at`, only journals carry `tags`, and so on. Live moment **list** rows typically omit `content` (and have no `timestamp`); we still expose `content_excerpt` when `content` is present (e.g. detail payloads). Rather than invent fields, we project what the API actually returns.
 
 **Base fields (all slim lists):** `id`, plus `name` or `title`.
 
 **Per-entity slim projections:**
 
 - **Sessions** — `title`, `session_date`, `has_summary` (bool), `summary_length` (char count; 0 when unset)
-- **Quests** — `name`, `status`, `objective_count`, `completion_pct` (derived from objectives), `updated_at`, `tags`
+- **Quests** — `name`, `status`, `objective_count`, `completion_pct` (from `objectives[]` when present, else from list `objective_count` / `completed_objective_count`), `updated_at`, `tags`
 - **Characters** — `name`, `type` (PC/NPC passthrough), `is_player` (derived: `type == "PC"`), `has_speaker` (derived: `player is not None`)
 - **Items** — `name`, `type` (enum passthrough), `has_mechanics` (derived: mechanics journal exists in the configured folder for this item name)
 - **Factions** — `name`, `alignment` if present
 - **Locations** — `name`, `is_root` (derived: no parent location)
-- **Beats** — `id`, `title`, `session_id`, `sequence`, `is_root` (derived: no parent beat)
-- **Moments** — `id`, `session_id`, `timestamp`, `content_excerpt` (first 120 chars of `content`)
+- **Beats** — `id`, `title` (from wire `label`), `session_id`, `sequence` (from wire `index`), `is_root` (derived: no parent beat)
+- **Moments** — `id`, `session_id`, `label`, `index`, `content_excerpt` (first 120 chars of `content` when present)
 - **Journals** — `title`, `folder_id`, `updated_at`, `tags`
 - **Journal folders** — `id`, `name`, `parent_id`, `is_root` (derived: `parent_id is None`)
 - **Campaign links** — `from_id`, `from_type`, `to_id`, `to_type`, `alias`
@@ -144,15 +144,20 @@ If Claude needs every field of every entity in a list, that is a signal to eithe
 
 ### Tools (writes and active operations)
 
-Total surface: **10 tools**. Kept tight on purpose.
+Total surface: **21** MCP tools (including `health_check` on the server module). Kept tight on purpose; read primitives replace the old markdown drafters.
 
 | Tool | Effect |
 |---|---|
 | `ask_archivist(question, asker_id?, gm_permissions?)` | Wraps `POST /v1/ask` with `stream: true`. Default `gm_permissions=false`, `asker_id=null`. Returns `{"answer": "<markdown>", "tokens": {"monthly_tokens_remaining", "hourly_tokens_remaining", ...}}` — budgets are read from `x-monthly-remaining-tokens` / `x-hourly-remaining-tokens` on the streaming HTTP response as soon as the stream starts (integers); optional JSON token fields on streamed lines override those header values. Emits MCP progress per decoded text chunk when the client sends a `progressToken` on `tools/call` (otherwise `report_progress` is a no-op). |
-| `draft_session_summary(session_id, style?, length?, include_cast_analysis=False)` | Internally fetches session + beats + moments (and cast-analysis when `include_cast_analysis=True`), returns a draft summary. **Does not write.** Cast analysis is silently skipped on 404 (e.g., play-by-post sessions). |
-| `commit_session_summary(session_id, summary, title?)` | `PATCH /v1/sessions/{id}`. If a prior non-empty summary exists, archives it to `Summary History/` first (see Versioning). Returns prior summary verbatim in the response. |
-| `draft_campaign_summary(guidance?)` | Aggregates session summaries + quests + key entities, drafts a new campaign description or long-form overview. |
-| `commit_campaign_summary(target, content)` | `target="description"` → `PATCH /v1/campaigns/{id}`. `target="overview"` → upserts the pinned `Campaign Overview` journal entry. Same archival rule as session summaries. |
+| `read_session(session_id, include?, include_excerpts?)` | `GET /v1/sessions/{id}` with `with_links=true`. Optional fanouts: `include` may list `beats`, `moments`, `cast_analysis` (404 on cast-analysis omits the key). Beats/moments are list-walked; `include_excerpts` controls moment/beat body vs truncation. **Read-only.** |
+| `read_beat(beat_id)` / `read_moment(moment_id)` | Single-entity GET with `with_links=true`. **Read-only.** |
+| `read_character(character_id, include?)` | Character GET plus optional `faction` / `location` slim rows from campaign links. **Read-only.** |
+| `read_faction` / `read_location` / `read_item` / `read_quest` / `read_journal` | Single-entity GETs (`read_journal` strips `content_rich`). All use `with_links=true`. **Read-only.** |
+| `read_campaign()` | `GET /v1/campaigns/{id}` with `with_links=true`. **Read-only.** |
+| `read_campaign_session_summaries(page?, page_size?, cursor?)` | Paginated sessions list plus per-row detail for `summary_excerpt` (400 chars). **Read-only.** |
+| `validate_wikilinks(content)` | Parses `[[Name]]` / `[[Name|alias]]`, resolves exact names against the campaign index, returns `resolved` / `unresolved` (with search candidates for misses). **Read-only.** |
+| `commit_session_summary(session_id, summary, title?)` | Strips unresolved wikilinks to plain text (reports `wikilinks_stripped`), then `PATCH /v1/sessions/{id}`. If a prior non-empty summary exists, archives it to `Summary History/` first (see Versioning). Equality guard compares **post-strip** summary to current. |
+| `commit_campaign_summary(content)` | Strips unresolved wikilinks, then `PATCH /v1/campaigns/{id}` on `description` only. Campaign **description** is the campaign overview; there is no separate overview journal. Same archival rule as session summaries. Equality guard compares **post-strip** text to current description. |
 | `upsert_journal_entry(folder_id, title, content, tags?)` | For long-form overviews and statblock journals. Idempotent on `(folder_id, title)`. Sends `content` (markdown) only; no `content_rich`. |
 | `register_item(name, description, mechanics?, type?, image?, tags?)` | Creates the Item. If `mechanics` is provided, also creates a paired statblock journal entry in the mechanics folder with cross-wikilinks. No tier enum; the presence of `mechanics` *is* the decision. |
 | `promote_item_to_homebrew(item_id, mechanics)` | Adds the mechanics journal to an existing Item (e.g., players enchant an existing weapon). Updates the Item description to add a wikilink to the new journal. |
@@ -163,8 +168,8 @@ Total surface: **10 tools**. Kept tight on purpose.
 
 | Prompt | Composes |
 |---|---|
-| `recap-last-session` | Reads latest session resource, calls `draft_session_summary` with style="recap-for-players", presents for review. |
-| `state-of-the-campaign` | Calls `draft_campaign_summary` with guidance="overview suitable for new players joining". |
+| `recap-last-session` | Reads latest session resource, calls `read_session` with beats/moments (and optional cast-analysis), presents raw data for review. |
+| `state-of-the-campaign` | Calls `read_campaign`, `read_campaign_session_summaries`, and `read_quest` / `search_entities` as needed for an overview suitable for new players. |
 | `prep-next-session` | Reads quests + last session + open beats, drafts GM prep notes (does not write back). |
 | `register-found-item` | Asks the user for narrative description, then asks "does this item have mechanics worth a statblock?" — if yes, prompts for the mechanics fields and calls `register_item` with them. |
 | `summarize-faction-arc(faction_id)` | Pulls a faction + linked beats/moments/characters/quests, drafts an arc summary. |
@@ -181,30 +186,20 @@ Total surface: **10 tools**. Kept tight on purpose.
 ```
 1. User: "Draft a recap for last week's session"
 2. Claude → resource archivist://sessions → finds latest by session_date (slim list)
-3. Claude → tool draft_session_summary(session_id, style="recap")
-   ↳ Server fetches session + beats + moments (+ cast-analysis if opted in)
-     internally — Claude does not orchestrate these reads.
-   ↳ Returns draft, includes prior summary verbatim for diff comparison.
+3. Claude → tool `read_session(session_id, include=["beats","moments"], include_excerpts=True)` (and optional `cast_analysis`)
+   ↳ Server returns canonical session payload plus fanout rows — Claude composes markdown in chat.
 4. User reviews / asks for revisions in chat
-5. Claude → tool commit_session_summary(session_id, summary=<approved>)
-   ↳ Server PATCHes; returns confirmation + token count
+5. Claude → tool `commit_session_summary(session_id, summary=<approved>)`
+   ↳ Unresolved `[[wikilinks]]` are stripped to plain text with `wikilinks_stripped` in the response; server PATCHes when content changes.
 ```
 
-Two-step (draft → commit) is mandatory. Never collapse into a single tool.
+Read → compose → commit. Commits never invent wikilink targets; validate first with `validate_wikilinks` when unsure.
 
 ### Campaign summary
 
-Same draft → review → commit shape. `draft_campaign_summary` aggregates (paging the slim lists as needed, fetching full records only where required):
-- `campaign.description` (current)
-- All session summaries in chronological order — fetched per-session via `archivist://session/{id}`, since the sessions slim list carries `summary_length` but not the summary text itself
-- All quests with status (slim list has `status` — sufficient)
-- Top N characters / factions by link count
+Same read → review → commit shape. Claude gathers context with `read_campaign`, `read_campaign_session_summaries`, `read_quest`, `search_entities`, and link resources as needed, then composes long-form text in chat.
 
-`commit_campaign_summary(target, content)` takes one of two targets:
-- `target="description"` — short blurb, PATCHes `campaign.description`.
-- `target="overview"` — long-form, upserts the pinned `Campaign Overview` journal entry.
-
-The prompt asks which one, with a sensible default based on output length (short → description, long → overview).
+`commit_campaign_summary(content)` always PATCHes `campaign.description`. There is **no** separate "Campaign Overview" journal target — the description field is the canonical campaign overview.
 
 ### Versioning (commit_session_summary, commit_campaign_summary)
 
@@ -297,13 +292,13 @@ Reads and writes can still overlap. Cache invalidation is synchronous within the
 
 Writes never retry automatically (see *Error handling and retries*), but Claude can invoke the same tool twice in a session and users can re-trigger a flow after a crash. Every write tool defines a natural-key idempotency rule so duplicate invocations don't corrupt campaign state. No `request_id` tokens, no server-side dedupe window — natural keys are sufficient for a single-user stdio MCP.
 
-- **`commit_session_summary` / `commit_campaign_summary`** — **equality-guarded**. Before archiving, the tool fetches the current summary and compares it (after normalizing whitespace and trailing newlines) to the proposed content. If they match, the tool skips archive + PATCH entirely and returns `{"already_current": true, "session_id": ...}`. This gives deterministic idempotency independent of wall-clock: the same commit invoked five seconds apart is a no-op, not a duplicate archive entry. When content differs, the archive step runs as before; the archive title uses an ISO timestamp for ordering (not for dedupe — the equality guard is the dedupe primitive).
+- **`commit_session_summary` / `commit_campaign_summary`** — **equality-guarded** on **post-strip** text. Unresolved `[[wikilinks]]` are rewritten to plain text before the guard runs and before PATCH. If the normalized stripped body equals the current value, the tool skips archive + PATCH and returns `{"already_current": true, ...}` plus `wikilinks_stripped` (possibly non-empty when only broken links differed). When content differs, the archive step runs as before; the archive title uses an ISO timestamp for ordering (not for dedupe — the equality guard is the dedupe primitive).
 - **`upsert_journal_entry`** — idempotent on `(folder_id, title)`. Second call updates content in place.
 - **`register_item`** — dedupes on **`(name, mechanics_signature)`** when a `mechanics` payload is provided, where `mechanics_signature` is the SHA-256 of the canonically-serialized mechanics JSON. If an existing Item in the campaign has the same name *and* an identical mechanics signature, the tool returns it with `{"already_exists": true}` instead of creating a duplicate. When `mechanics` is not provided, **no dedupe is attempted** — the tool creates the Item unconditionally. Rationale: a campaign may legitimately contain multiple distinct "Potion of Healing" or "Sending Stone" narrative entries that the user is tracking as separate story instances. Only identical homebrew-with-mechanics definitions collapse; narrative-only registrations do not. If dedupe behavior is ever needed for a specific narrative item, the caller can `search_entities` first.
 - **`promote_item_to_homebrew`** — upserts the mechanics journal on `(mechanics_folder_id, "{Item.name} — Mechanics")`. Second call updates the existing journal.
 - **`link_entities`** — dedupes on `(from_id, from_type, to_id, to_type)`. On collision returns the existing edge (updating `alias` if provided).
 
-`ask_archivist`, `draft_session_summary`, `draft_campaign_summary`, and `search_entities` have no write side-effects and so need no idempotency rules.
+`ask_archivist`, all `read_*` tools, `validate_wikilinks`, and `search_entities` have no write side-effects and so need no idempotency rules.
 
 ### Input validation
 
@@ -442,7 +437,6 @@ ARCHIVIST_API_KEY=...                             # optional if credentials.toml
 # Optional overrides
 ARCHIVIST_BASE_URL=https://api.myarchivist.ai     # override for staging
 ARCHIVIST_MECHANICS_FOLDER=Items/Mechanics        # auto-created if missing
-ARCHIVIST_OVERVIEW_FOLDER=Campaign Overview
 ARCHIVIST_HISTORY_FOLDER=Summary History
 
 # Operational
@@ -509,8 +503,18 @@ archivistdnd/
 │       ├── resources.py            # @mcp.resource definitions
 │       ├── tools/
 │       │   ├── ask.py              # ask_archivist with progress-notification streaming
-│       │   ├── session_summary.py  # draft_session_summary / commit_session_summary
-│       │   ├── campaign_summary.py # draft_campaign_summary / commit_campaign_summary
+│       │   ├── session_summary.py  # commit_session_summary
+│       │   ├── campaign_summary.py # commit_campaign_summary
+│       │   ├── reads_helpers.py    # name index + link fanout helpers for reads / wikilinks
+│       │   ├── wikilinks.py        # validate_wikilinks + strip helper for commits
+│       │   ├── read_session.py     # read_session, read_beat, read_moment
+│       │   ├── read_campaign.py    # read_campaign, read_campaign_session_summaries
+│       │   ├── read_character.py   # read_character
+│       │   ├── read_faction.py     # read_faction
+│       │   ├── read_location.py    # read_location
+│       │   ├── read_item.py        # read_item
+│       │   ├── read_quest.py       # read_quest
+│       │   ├── read_journal.py     # read_journal
 │       │   ├── items.py            # register_item, promote_item_to_homebrew
 │       │   ├── journals.py         # upsert_journal_entry
 │       │   ├── links.py            # link_entities
@@ -658,10 +662,10 @@ Every step lists its own `Tests:` acceptance gate. A step is not "done" until th
    - **Tests:** `types` filter narrows results to the requested kinds; filter combinations AND correctly; empty-result path returns `[]`, not an error; invalid filter is rejected with a clear validation error; results are slim-shape (verified against `project_slim` output).
 10. **~** `ask_archivist` tool with MCP progress-notification streaming when the client supplies a progress token. Return value includes assembled `answer` (chunked `text/plain` body) and `tokens` with snake_case budget keys from response headers; JSON-shaped stream lines can override token fields. **Remaining gap:** confirm against a live `/v1/ask` stream that `x-monthly-remaining-tokens` / `x-hourly-remaining-tokens` populate and that a `progressToken`-sending MCP client receives ordered progress notifications end-to-end (implementation is in-tree; flip this step to **✓** after that live check).
     - **Tests:** progress notifications emitted in order during a mocked stream; the final returned string equals the concatenation of streamed chunks; token-budget fields present under snake_case keys (header path + invalid-header skip); upstream mid-stream error surfaces as an MCP tool error with a correlation ID; client cancellation is honored (no further chunks after cancel).
-11. **✓** `draft_session_summary` + `commit_session_summary`. Archive-first commit logic (`Summary History/` upsert, then PATCH, no rollback).
-    - **Tests:** `draft_*` returns the candidate with no side effects (no HTTP writes observed); `commit_*` archives first, then PATCHes; equality guard — whitespace-normalized content that matches the current summary short-circuits to a no-op (no archive, no PATCH); injected PATCH failure after successful archive produces the documented orphan-report error payload and logs the `commit.partial_failure` event; end-to-end happy path on a recorded fixture.
-12. **✓** Campaign summary tools (`draft_campaign_summary`, `commit_campaign_summary`).
-    - **Tests:** mirror step 11 — draft purity, archive-first commit, equality guard, PATCH-failure orphan reporting.
+11. **✓** `read_session` / `read_*` + `validate_wikilinks` + `commit_session_summary`. Read tools use `with_links=true` on GETs; commits strip unresolved wikilinks before PATCH and report `wikilinks_stripped`. Archive-first commit logic (`Summary History/` upsert, then PATCH, no rollback).
+    - **Tests:** `read_*` exercises fixtures with regex URL mocks; `commit_*` archives first, then PATCHes; equality guard uses post-strip body; wikilink strip path; injected PATCH failure after successful archive produces the documented orphan-report error payload and logs the `commit.partial_failure` event.
+12. **✓** Campaign summary: `read_campaign` + `commit_campaign_summary(content)` on `description` only (overview journal path removed).
+    - **Tests:** mirror step 11 — archive-first commit, equality guard, wikilink strip, PATCH-failure orphan reporting.
 13. **✓** `scripts/probe_contracts.py` — contract probe against a live campaign that exercises the write paths whose shapes were Open Questions: `Item.type` wire format for multi-word enum values, and the accepted shape of the `mechanics` payload in Items. Ran 2026-04-20 as `contract_probe_20260420T144536Z`; artifacts at `scripts/probe-results/contract_probe_20260420T144536Z.{json,md}`. Results recorded in the **Contract probe results** section; Open Questions 2 and 3 closed. **Validator decisions baked in:** (a) `Item.type` — send canonical `"wondrous item"` (space form) on write, accept any variant on read; (b) `mechanics` — treat as unconstrained JSON at the API boundary; `mechanics_signature` is SHA-256 over canonical JSON serialization regardless of structure. See step 5 for how these decisions flow into `validation.py`.
     - **Tests:** `--dry-run` path validates the matrix + report generation without network calls; probe artifact JSON validates against its schema; probe Markdown renders without template errors.
 14. **✓** `upsert_journal_entry`, then `register_item` / `promote_item_to_homebrew`. Auto-creates the mechanics folder on first use. **`Item.type` is sent in the canonical space form** (`"wondrous item"`, etc.) per step 13's probe decision; the mapping lives in `validation.py`. Natural-key idempotency per the *Idempotency* section: `register_item` with a `mechanics` payload dedupes on `(name, mechanics_signature)` and returns the existing item with `already_exists=true` only when both match; narrative-only registrations (no `mechanics`) always create a new item so legitimate story duplicates (e.g. two Sending Stones) remain distinct.
