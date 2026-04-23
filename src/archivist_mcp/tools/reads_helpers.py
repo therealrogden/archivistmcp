@@ -107,7 +107,7 @@ async def character_neighbor_slugs(
         client,
         f"/v1/campaigns/{campaign_id}/links",
         from_id=character_id,
-        from_type="character",
+        from_type="Character",  # wire requires Title Case
     )
     seen_kind: set[str] = set()
     for link in rows:

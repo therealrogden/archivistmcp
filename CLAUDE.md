@@ -167,12 +167,13 @@ Crown") route through `ask_archivist`. Don't use `search_entities` to find
 an entity by role or concept. See `DESIGN.md:35,160`;
 `src/archivist_mcp/tools/search.py`.
 
-### 6. Fixtures beat the API reference on conflict
+### 6. Live wire and probes beat assumptions; fix fixtures when they drift
 
-Example: `/v1/campaigns/{id}/links` filter params. Reference shows
-capitalized values; fixture shows lowercase — send **lowercase**
-(`tests/fixtures/campaign/links.json`; reference at
-`ArchivistAPIReference.md.txt:~537-550`).
+Example: `/v1/campaigns/{id}/links` filter params. The reference and server
+both require **Title Case** (`Character`, `Location`, `Faction`, `Item`, `Quest`,
+`Journal`). Lowercase returns zero results. An older
+`tests/fixtures/campaign/links.json` had lowercase; it was wrong. Confirmed via
+probe: `docs/internal/wire-audit-probes.md` section 4.
 
 ### 7. Resources are user-attached; tools are agent-callable
 
@@ -213,8 +214,9 @@ deleted for exactly this reason.
   page; pagination is explicit (`DESIGN.md:31`).
 - **Do not use `search_entities` for semantic lookup.** Route to
   `ask_archivist`. Rule 5.
-- **Do not treat `ArchivistAPIReference.md.txt` as truth over fixtures.**
-  Rule 6.
+- **Do not treat a stale fixture or a single doc as the whole truth over the
+  live API.** Re-probe (`docs/internal/wire-audit-probes.md`) and align code and
+  committed fixtures. Rule 6.
 - **Do not put `ARCHIVIST_CAMPAIGN_ID` in `.env.example`.** Campaign ID
   belongs in per-instance MCP config, not a dev dotfile.
 - **Do not write new composite reads into resources.** Composites live in
@@ -271,9 +273,9 @@ deleted for exactly this reason.
 - **"Why are my wikilinks not clickable after commit?"** — a read path
   likely dropped `[[]]` markup (missing `with_links=True`) or the write
   path mangled the body. See rule 3; commits should pass content verbatim.
-- **"Why does the API reference say `Character` but my filter returns
-  nothing?"** — filter values are lowercase on `/campaigns/{id}/links`.
-  Trust the fixture. Rule 6.
+- **"Why does my `from_type=character` filter return zero?"** — the server
+  requires Title Case. Send `Character`, `Faction`, and so on on
+  `/v1/campaigns/{id}/links`. Rule 6.
 - **"Can I just call `search_entities` to find the faction the PCs hate?"**
   — no, it's lexical. Use `ask_archivist`. Rule 5.
 
