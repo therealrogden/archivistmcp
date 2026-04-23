@@ -16,7 +16,7 @@ async def test_link_entities_create_then_dedupe(httpx_mock: object) -> None:
     httpx_mock.reset()
     httpx_mock._options.assert_all_responses_were_requested = False
     base = os.environ["ARCHIVIST_BASE_URL"].rstrip("/")
-    q = urlencode({"page": 1, "page_size": 50})
+    q = urlencode({"page": 1, "size": 50})
     link_row = {
         "id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
         "from_id": CHARACTER_ID,
@@ -53,7 +53,7 @@ async def test_link_entities_different_tuple_creates(httpx_mock: object) -> None
     httpx_mock.reset()
     httpx_mock._options.assert_all_responses_were_requested = False
     base = os.environ["ARCHIVIST_BASE_URL"].rstrip("/")
-    q = urlencode({"page": 1, "page_size": 50})
+    q = urlencode({"page": 1, "size": 50})
     httpx_mock.add_response(
         method="GET",
         url=f"{base}/v1/campaigns/{CAMPAIGN_ID}/links?{q}",

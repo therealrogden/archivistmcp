@@ -17,7 +17,7 @@ async def find_journal_by_folder_and_title(*, folder_id: str, title: str) -> tup
             "/v1/journals",
             campaign_id=client.campaign_id,
             page=page,
-            page_size=50,
+            size=50,
         )
         rows = list_data(body)
         for row in rows:

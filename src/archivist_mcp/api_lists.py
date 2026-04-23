@@ -17,11 +17,11 @@ def list_data(body: Any) -> list[dict[str, Any]]:
 
 
 async def fetch_all_list_pages(client: ArchivistClient, path: str, **params: Any) -> list[dict[str, Any]]:
-    """Fetch every page of a ``data``-enveloped list (uses ``page`` / ``page_size``)."""
+    """Fetch every page of a ``data``-enveloped list (uses ``page`` / ``size``)."""
     out: list[dict[str, Any]] = []
     page = 1
     while True:
-        body = await client.get(path, page=page, page_size=50, **params)
+        body = await client.get(path, page=page, size=50, **params)
         chunk = list_data(body)
         out.extend(chunk)
         if not chunk:

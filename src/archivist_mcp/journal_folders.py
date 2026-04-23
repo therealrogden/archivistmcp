@@ -24,7 +24,7 @@ async def _all_journal_folders(client: ArchivistClient) -> list[dict[str, Any]]:
             "/v1/journal-folders",
             campaign_id=client.campaign_id,
             page=page,
-            page_size=50,
+            size=50,
         )
         chunk = _list_page_data(body)
         out.extend(chunk)

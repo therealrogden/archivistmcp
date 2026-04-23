@@ -22,7 +22,6 @@ def _cfg() -> Config:
         campaign_id=CAMPAIGN_ID,
         base_url=os.environ["ARCHIVIST_BASE_URL"].rstrip("/"),
         mechanics_folder="Items/Mechanics",
-        overview_folder="Campaign Overview",
         history_folder="Summary History",
     )
 
@@ -45,8 +44,8 @@ async def test_single_flight_two_cold_reads_one_upstream() -> None:
     )
     try:
         a, b = await asyncio.gather(
-            client.get("/v1/items", campaign_id=CAMPAIGN_ID, page=1, page_size=50),
-            client.get("/v1/items", campaign_id=CAMPAIGN_ID, page=1, page_size=50),
+            client.get("/v1/items", campaign_id=CAMPAIGN_ID, page=1, size=50),
+            client.get("/v1/items", campaign_id=CAMPAIGN_ID, page=1, size=50),
         )
         assert a == b == {"data": [1]}
         assert len(calls) == 1
@@ -110,12 +109,12 @@ async def test_write_invalidates_before_next_read_fetches_fresh() -> None:
     cache = Cache()
     client = ArchivistClient(_cfg(), cache=cache, transport=transport)
     try:
-        first = await client.get("/v1/items", campaign_id=CAMPAIGN_ID, page=1, page_size=50)
+        first = await client.get("/v1/items", campaign_id=CAMPAIGN_ID, page=1, size=50)
         assert first == {"v": 1}
-        second = await client.get("/v1/items", campaign_id=CAMPAIGN_ID, page=1, page_size=50)
+        second = await client.get("/v1/items", campaign_id=CAMPAIGN_ID, page=1, size=50)
         assert second == {"v": 1}
         await client.post("/v1/items", json={"name": "x"})
-        third = await client.get("/v1/items", campaign_id=CAMPAIGN_ID, page=1, page_size=50)
+        third = await client.get("/v1/items", campaign_id=CAMPAIGN_ID, page=1, size=50)
         assert third == {"v": 2}
     finally:
         await client.aclose()
@@ -140,14 +139,14 @@ async def test_write_during_read_skips_stale_cache_fill_subsequent_read_fresh() 
     client = ArchivistClient(_cfg(), cache=cache, transport=transport)
     try:
         read_task = asyncio.create_task(
-            client.get("/v1/items", campaign_id=CAMPAIGN_ID, page=1, page_size=50)
+            client.get("/v1/items", campaign_id=CAMPAIGN_ID, page=1, size=50)
         )
         await asyncio.sleep(0.05)
         await client.post("/v1/items", json={"name": "z"})
         gate.set()
         in_flight = await read_task
         assert in_flight == {"phase": "during"}
-        fresh = await client.get("/v1/items", campaign_id=CAMPAIGN_ID, page=1, page_size=50)
+        fresh = await client.get("/v1/items", campaign_id=CAMPAIGN_ID, page=1, size=50)
         assert fresh == {"phase": "after"}
     finally:
         gate.set()

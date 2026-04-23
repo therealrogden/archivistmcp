@@ -15,7 +15,7 @@ async def _get_slim_list(
     cursor: str | None = None,
     **extra_params: Any,
 ) -> Any:
-    """GET a paginated list, forward pagination to Archivist, return envelope with slim ``data`` rows."""
+    """GET a paginated list; list GETs use query param ``size`` on the wire (from :func:`.pagination_params`)."""
     params: dict[str, Any] = {**extra_params, **pagination_params(page=page, page_size=page_size, cursor=cursor)}
     body = await client.get(path, **params)
     return project_list_payload(body, kind)
@@ -41,8 +41,8 @@ async def campaign_links_resource(
 ) -> dict[str, Any]:
     """Entity graph links for the configured campaign (paginated).
 
-    Pagination is forwarded to the Archivist API: ``page`` (default 1), ``page_size`` (default 50,
-    capped at 50 server-side), and optional ``cursor`` when the upstream API supports it.
+    Resource query template uses ``page`` and ``page_size``; the HTTP client sends ``size`` (default
+    50, capped at 50) and optional ``cursor`` when the upstream API supports it.
     """
     return await _get_slim_list(
         f"/v1/campaigns/{client.campaign_id}/links",
@@ -61,9 +61,9 @@ async def sessions_resource(
 ) -> dict[str, Any]:
     """Paginated session list for the campaign, ordered by session_date.
 
-    Pagination is forwarded to the Archivist API: ``page`` (default 1), ``page_size`` (default 50,
-    capped at 50 server-side), and optional ``cursor`` when the upstream API supports it.
-    List rows use the slim session projection.
+    Resource query template uses ``page`` and ``page_size``; the HTTP client sends ``size`` (default
+    50, capped at 50) and optional ``cursor`` when the upstream API supports it. List rows use the
+    slim session projection.
     """
     return await _get_slim_list(
         "/v1/sessions",
@@ -105,8 +105,8 @@ async def session_beats_resource(
 ) -> dict[str, Any]:
     """Beats for this session (paginated list from ``GET /v1/beats``).
 
-    Pagination is forwarded to the Archivist API: ``page`` (default 1), ``page_size`` (default 50,
-    capped at 50 server-side), and optional ``cursor`` when the upstream API supports it.
+    Resource query template uses ``page`` and ``page_size``; the HTTP client sends ``size`` (default
+    50, capped at 50) and optional ``cursor`` when the upstream API supports it.
     """
     return await _get_slim_list(
         "/v1/beats",
@@ -128,8 +128,8 @@ async def session_moments_resource(
 ) -> dict[str, Any]:
     """Moments for this session (paginated list from ``GET /v1/moments``).
 
-    Pagination is forwarded to the Archivist API: ``page`` (default 1), ``page_size`` (default 50,
-    capped at 50 server-side), and optional ``cursor`` when the upstream API supports it.
+    Resource query template uses ``page`` and ``page_size``; the HTTP client sends ``size`` (default
+    50, capped at 50) and optional ``cursor`` when the upstream API supports it.
     """
     return await _get_slim_list(
         "/v1/moments",
@@ -162,8 +162,8 @@ async def quests_resource(
 ) -> dict[str, Any]:
     """Quest list for the campaign (slim rows; full detail via ``archivist://quest/{id}``).
 
-    Pagination is forwarded to the Archivist API: ``page`` (default 1), ``page_size`` (default 50,
-    capped at 50 server-side), and optional ``cursor`` when the upstream API supports it.
+    Resource query template uses ``page`` and ``page_size``; the HTTP client sends ``size`` (default
+    50, capped at 50) and optional ``cursor`` when the upstream API supports it.
     """
     return await _get_slim_list(
         "/v1/quests",
@@ -189,8 +189,8 @@ async def characters_resource(
 ) -> dict[str, Any]:
     """Cast list (PCs and NPCs) for the campaign (slim rows).
 
-    Pagination is forwarded to the Archivist API: ``page`` (default 1), ``page_size`` (default 50,
-    capped at 50 server-side), and optional ``cursor`` when the upstream API supports it.
+    Resource query template uses ``page`` and ``page_size``; the HTTP client sends ``size`` (default
+    50, capped at 50) and optional ``cursor`` when the upstream API supports it.
     """
     return await _get_slim_list(
         "/v1/characters",
@@ -216,8 +216,8 @@ async def items_resource(
 ) -> dict[str, Any]:
     """Item compendium list (slim rows).
 
-    Pagination is forwarded to the Archivist API: ``page`` (default 1), ``page_size`` (default 50,
-    capped at 50 server-side), and optional ``cursor`` when the upstream API supports it.
+    Resource query template uses ``page`` and ``page_size``; the HTTP client sends ``size`` (default
+    50, capped at 50) and optional ``cursor`` when the upstream API supports it.
     """
     return await _get_slim_list(
         "/v1/items",
@@ -237,8 +237,8 @@ async def factions_resource(
 ) -> dict[str, Any]:
     """Faction list (slim rows).
 
-    Pagination is forwarded to the Archivist API: ``page`` (default 1), ``page_size`` (default 50,
-    capped at 50 server-side), and optional ``cursor`` when the upstream API supports it.
+    Resource query template uses ``page`` and ``page_size``; the HTTP client sends ``size`` (default
+    50, capped at 50) and optional ``cursor`` when the upstream API supports it.
     """
     return await _get_slim_list(
         "/v1/factions",
@@ -264,8 +264,8 @@ async def locations_resource(
 ) -> dict[str, Any]:
     """Location list (slim rows).
 
-    Pagination is forwarded to the Archivist API: ``page`` (default 1), ``page_size`` (default 50,
-    capped at 50 server-side), and optional ``cursor`` when the upstream API supports it.
+    Resource query template uses ``page`` and ``page_size``; the HTTP client sends ``size`` (default
+    50, capped at 50) and optional ``cursor`` when the upstream API supports it.
     """
     return await _get_slim_list(
         "/v1/locations",
@@ -297,8 +297,8 @@ async def journals_resource(
 ) -> dict[str, Any]:
     """Journal entry list for the campaign (metadata; full content via ``archivist://journal/{id}``).
 
-    Pagination is forwarded to the Archivist API: ``page`` (default 1), ``page_size`` (default 50,
-    capped at 50 server-side), and optional ``cursor`` when the upstream API supports it.
+    Resource query template uses ``page`` and ``page_size``; the HTTP client sends ``size`` (default
+    50, capped at 50) and optional ``cursor`` when the upstream API supports it.
     """
     return await _get_slim_list(
         "/v1/journals",
@@ -326,8 +326,8 @@ async def journal_folders_resource(
 ) -> dict[str, Any]:
     """Journal folder tree for the campaign (slim rows).
 
-    Pagination is forwarded to the Archivist API: ``page`` (default 1), ``page_size`` (default 50,
-    capped at 50 server-side), and optional ``cursor`` when the upstream API supports it.
+    Resource query template uses ``page`` and ``page_size``; the HTTP client sends ``size`` (default
+    50, capped at 50) and optional ``cursor`` when the upstream API supports it.
     """
     return await _get_slim_list(
         "/v1/journal-folders",

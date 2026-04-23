@@ -17,7 +17,7 @@ async def test_upsert_journal_entry_create_then_update(httpx_mock: object) -> No
     httpx_mock.reset()
     httpx_mock._options.assert_all_responses_were_requested = False
     base = os.environ["ARCHIVIST_BASE_URL"].rstrip("/")
-    q = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "page_size": 50})
+    q = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "size": 50})
     httpx_mock.add_response(
         method="GET",
         url=f"{base}/v1/journals?{q}",

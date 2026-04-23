@@ -210,7 +210,7 @@ async def test_sessions_forwards_page_page_size_cursor(httpx_mock: Any) -> None:
     base = os.environ["ARCHIVIST_BASE_URL"].rstrip("/")
     cid = CAMPAIGN_ID
     payload = load_fixture("session", "list")
-    q = urlencode({"campaign_id": cid, "page": 2, "page_size": 25, "cursor": "abc"})
+    q = urlencode({"campaign_id": cid, "page": 2, "size": 25, "cursor": "abc"})
     httpx_mock.add_response(method="GET", url=f"{base}/v1/sessions?{q}", json=payload)
     await sessions_resource(page=2, page_size=25, cursor="abc")
     reqs = httpx_mock.get_requests(method="GET")
@@ -218,7 +218,7 @@ async def test_sessions_forwards_page_page_size_cursor(httpx_mock: Any) -> None:
     assert match, "expected a GET /v1/sessions request"
     qs = parse_qs(urlparse(str(match[-1].url)).query)
     assert qs["page"] == ["2"]
-    assert qs["page_size"] == ["25"]
+    assert qs["size"] == ["25"]
     assert qs["cursor"] == ["abc"]
     assert qs["campaign_id"] == [cid]
 
@@ -228,13 +228,13 @@ async def test_sessions_clamps_page_size_to_50(httpx_mock: Any) -> None:
     base = os.environ["ARCHIVIST_BASE_URL"].rstrip("/")
     cid = CAMPAIGN_ID
     payload = load_fixture("session", "list")
-    q = urlencode({"campaign_id": cid, "page": 1, "page_size": 50})
+    q = urlencode({"campaign_id": cid, "page": 1, "size": 50})
     httpx_mock.add_response(method="GET", url=f"{base}/v1/sessions?{q}", json=payload)
     await sessions_resource(page=1, page_size=500)
     reqs = httpx_mock.get_requests(method="GET")
     match = [r for r in reqs if r.url.path == "/v1/sessions"]
     qs = parse_qs(urlparse(str(match[-1].url)).query)
-    assert qs["page_size"] == ["50"]
+    assert qs["size"] == ["50"]
 
 
 @pytest.mark.asyncio
@@ -244,7 +244,7 @@ async def test_sessions_default_pagination_no_cursor(httpx_mock: Any) -> None:
     match = [r for r in reqs if r.url.path == "/v1/sessions"]
     qs = parse_qs(urlparse(str(match[-1].url)).query)
     assert qs["page"] == ["1"]
-    assert qs["page_size"] == ["50"]
+    assert qs["size"] == ["50"]
     assert "cursor" not in qs
 
 
@@ -258,7 +258,7 @@ async def test_sessions_preserves_next_cursor(monkeypatch: pytest.MonkeyPatch) -
     async def fake_get(path: str, **params: Any) -> Any:
         assert path == "/v1/sessions"
         assert params.get("page") == 1
-        assert params.get("page_size") == 50
+        assert params.get("size") == 50
         return body
 
     monkeypatch.setattr(res.client, "get", fake_get)

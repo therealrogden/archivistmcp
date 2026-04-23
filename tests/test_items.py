@@ -34,7 +34,7 @@ async def test_register_item_narrative_only_always_posts(httpx_mock: object) -> 
     httpx_mock.reset()
     httpx_mock._options.assert_all_responses_were_requested = False
     base = os.environ["ARCHIVIST_BASE_URL"].rstrip("/")
-    qi = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "page_size": 50})
+    qi = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "size": 50})
     httpx_mock.add_response(method="POST", url=f"{base}/v1/items", json={"id": NEW_ITEM_ID}, status_code=201)
     httpx_mock.add_response(
         method="GET",
@@ -68,7 +68,7 @@ async def test_register_item_mechanics_dedupe_same_signature(httpx_mock: object)
     httpx_mock.reset()
     httpx_mock._options.assert_all_responses_were_requested = False
     base = os.environ["ARCHIVIST_BASE_URL"].rstrip("/")
-    qi = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "page_size": 50})
+    qi = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "size": 50})
     mech = {"damage": "1d8", "rarity": "rare"}
     httpx_mock.add_response(
         method="GET",
@@ -103,7 +103,7 @@ async def test_register_item_mechanics_different_signature_creates(httpx_mock: o
     httpx_mock.reset()
     httpx_mock._options.assert_all_responses_were_requested = False
     base = os.environ["ARCHIVIST_BASE_URL"].rstrip("/")
-    qi = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "page_size": 50})
+    qi = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "size": 50})
     httpx_mock.add_response(
         method="GET",
         url=f"{base}/v1/items?{qi}",
@@ -127,7 +127,7 @@ async def test_register_item_mechanics_different_signature_creates(httpx_mock: o
         url=f"{base}/v1/items/{NEW_ITEM_ID}",
         json={"id": NEW_ITEM_ID, "name": "Blade", "description": "d", "type": "weapon"},
     )
-    qf = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "page_size": 50})
+    qf = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "size": 50})
     httpx_mock.add_response(method="GET", url=f"{base}/v1/journal-folders?{qf}", json=_folder_pair_response())
     httpx_mock.add_response(method="POST", url=f"{base}/v1/journals", json={"id": MECH_JOURNAL_ID}, status_code=201)
     httpx_mock.add_response(
@@ -148,7 +148,7 @@ async def test_register_item_wondrous_type_space_form_on_wire(httpx_mock: object
     base = os.environ["ARCHIVIST_BASE_URL"].rstrip("/")
     from archivist_mcp.validation import ItemType
 
-    qi = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "page_size": 50})
+    qi = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "size": 50})
     httpx_mock.add_response(method="GET", url=f"{base}/v1/items?{qi}", json={"data": [], "page": 1, "pages": 1, "total": 0})
     httpx_mock.add_response(method="POST", url=f"{base}/v1/items", json={"id": NEW_ITEM_ID}, status_code=201)
     httpx_mock.add_response(
@@ -156,7 +156,7 @@ async def test_register_item_wondrous_type_space_form_on_wire(httpx_mock: object
         url=f"{base}/v1/items/{NEW_ITEM_ID}",
         json={"id": NEW_ITEM_ID, "name": "Cape", "description": "d", "type": "wondrous item"},
     )
-    qf = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "page_size": 50})
+    qf = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "size": 50})
     httpx_mock.add_response(method="GET", url=f"{base}/v1/journal-folders?{qf}", json=_folder_pair_response())
     httpx_mock.add_response(method="POST", url=f"{base}/v1/journals", json={"id": MECH_JOURNAL_ID}, status_code=201)
     httpx_mock.add_response(method="PATCH", url=f"{base}/v1/items/{NEW_ITEM_ID}", json={})
@@ -183,9 +183,9 @@ async def test_promote_item_to_homebrew_upserts_journal_and_patches_item(httpx_m
         url=f"{base}/v1/items/{ITEM_ID}",
         json={"id": ITEM_ID, "name": "Sword", "description": "plain", "type": "weapon"},
     )
-    qf = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "page_size": 50})
+    qf = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "size": 50})
     httpx_mock.add_response(method="GET", url=f"{base}/v1/journal-folders?{qf}", json=_folder_pair_response())
-    qj = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "page_size": 50})
+    qj = urlencode({"campaign_id": CAMPAIGN_ID, "page": 1, "size": 50})
     httpx_mock.add_response(
         method="GET",
         url=f"{base}/v1/journals?{qj}",

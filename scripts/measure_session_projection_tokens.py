@@ -41,7 +41,7 @@ async def _fetch_live_sessions() -> dict[str, Any]:
     async with httpx.AsyncClient(base_url=cfg.base_url, headers=headers, timeout=60.0) as client:
         r = await client.get(
             "/v1/sessions",
-            params={"campaign_id": cfg.campaign_id, "page": 1, "page_size": 50},
+            params={"campaign_id": cfg.campaign_id, "page": 1, "size": 50},
         )
         r.raise_for_status()
         return r.json()

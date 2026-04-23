@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
 
 import pytest
 
@@ -52,73 +52,57 @@ def _register_default_api_routes(httpx_mock: Any) -> None:
     base = os.environ["ARCHIVIST_BASE_URL"].rstrip("/")
     cid = CAMPAIGN_ID
 
-    def add(method: str, path: str, **kwargs: Any) -> None:
-        httpx_mock.add_response(method=method, url=f"{base}{path}", **kwargs)
+    def add_get(path_suffix_regex: str, **kwargs: Any) -> None:
+        httpx_mock.add_response(
+            method="GET",
+            url=re.compile(rf"^{re.escape(base)}{path_suffix_regex}$"),
+            **kwargs,
+        )
 
-    add("GET", "/health", json={"status": "ok"})
-    add("GET", f"/v1/campaigns/{cid}", json=load_fixture("campaign", "detail"))
-    add("GET", f"/v1/campaigns/{cid}/stats", json=load_fixture("campaign", "stats"))
-    q_links = urlencode({"page": 1, "page_size": 50})
-    add("GET", f"/v1/campaigns/{cid}/links?{q_links}", json=load_fixture("campaign", "links"))
+    add_get(r"/health(\?.*)?", json={"status": "ok"})
+    add_get(rf"/v1/campaigns/{re.escape(cid)}(\?.*)?", json=load_fixture("campaign", "detail"))
+    add_get(rf"/v1/campaigns/{re.escape(cid)}/stats(\?.*)?", json=load_fixture("campaign", "stats"))
+    add_get(rf"/v1/campaigns/{re.escape(cid)}/links\?.*", json=load_fixture("campaign", "links"))
 
-    q_sessions = urlencode({"campaign_id": cid, "page": 1, "page_size": 50})
-    add("GET", f"/v1/sessions?{q_sessions}", json=load_fixture("session", "list"))
+    add_get(r"/v1/sessions\?.*", json=load_fixture("session", "list"))
 
-    add("GET", f"/v1/sessions/{SESSION_ID}", json=load_fixture("session", "detail"))
-    add(
-        "GET",
-        f"/v1/sessions/{SESSION_ID}/cast-analysis",
+    add_get(rf"/v1/sessions/{re.escape(SESSION_ID)}(\?.*)?", json=load_fixture("session", "detail"))
+    add_get(
+        rf"/v1/sessions/{re.escape(SESSION_ID)}/cast-analysis(\?.*)?",
         json=load_fixture("session", "cast_analysis"),
     )
 
-    q_beats = urlencode(
-        {"campaign_id": cid, "game_session_id": SESSION_ID, "page": 1, "page_size": 50}
-    )
-    add("GET", f"/v1/beats?{q_beats}", json=load_fixture("session", "beats_list"))
+    add_get(r"/v1/beats\?.*", json=load_fixture("session", "beats_list"))
 
-    q_moments = urlencode(
-        {"campaign_id": cid, "session_id": SESSION_ID, "page": 1, "page_size": 50}
-    )
-    add("GET", f"/v1/moments?{q_moments}", json=load_fixture("session", "moments_list"))
+    add_get(r"/v1/moments\?.*", json=load_fixture("session", "moments_list"))
 
-    add("GET", f"/v1/beats/{BEAT_ID}", json=load_fixture("beat", "detail"))
-    add("GET", f"/v1/moments/{MOMENT_ID}", json=load_fixture("moment", "detail"))
+    add_get(rf"/v1/beats/{re.escape(BEAT_ID)}(\?.*)?", json=load_fixture("beat", "detail"))
+    add_get(rf"/v1/moments/{re.escape(MOMENT_ID)}(\?.*)?", json=load_fixture("moment", "detail"))
 
-    q_quests = urlencode({"campaign_id": cid, "page": 1, "page_size": 50})
-    add("GET", f"/v1/quests?{q_quests}", json=load_fixture("quest", "list"))
-    add("GET", f"/v1/quests/{QUEST_ID}", json=load_fixture("quest", "detail"))
+    add_get(r"/v1/quests\?.*", json=load_fixture("quest", "list"))
+    add_get(rf"/v1/quests/{re.escape(QUEST_ID)}(\?.*)?", json=load_fixture("quest", "detail"))
 
-    q_chars = urlencode({"campaign_id": cid, "page": 1, "page_size": 50})
-    add("GET", f"/v1/characters?{q_chars}", json=load_fixture("character", "list"))
-    add("GET", f"/v1/characters/{CHARACTER_ID}", json=load_fixture("character", "detail"))
+    add_get(r"/v1/characters\?.*", json=load_fixture("character", "list"))
+    add_get(rf"/v1/characters/{re.escape(CHARACTER_ID)}(\?.*)?", json=load_fixture("character", "detail"))
 
-    q_items = urlencode({"campaign_id": cid, "page": 1, "page_size": 50})
-    add("GET", f"/v1/items?{q_items}", json=load_fixture("item", "list"))
-    add("GET", f"/v1/items/{ITEM_ID}", json=load_fixture("item", "detail"))
+    add_get(r"/v1/items\?.*", json=load_fixture("item", "list"))
+    add_get(rf"/v1/items/{re.escape(ITEM_ID)}(\?.*)?", json=load_fixture("item", "detail"))
 
-    q_factions = urlencode({"campaign_id": cid, "page": 1, "page_size": 50})
-    add("GET", f"/v1/factions?{q_factions}", json=load_fixture("faction", "list"))
-    add("GET", f"/v1/factions/{FACTION_ID}", json=load_fixture("faction", "detail"))
+    add_get(r"/v1/factions\?.*", json=load_fixture("faction", "list"))
+    add_get(rf"/v1/factions/{re.escape(FACTION_ID)}(\?.*)?", json=load_fixture("faction", "detail"))
 
-    q_locs = urlencode({"campaign_id": cid, "page": 1, "page_size": 50})
-    add("GET", f"/v1/locations?{q_locs}", json=load_fixture("location", "list"))
-    add("GET", f"/v1/locations/{LOCATION_ID}", json=load_fixture("location", "detail"))
+    add_get(r"/v1/locations\?.*", json=load_fixture("location", "list"))
+    add_get(rf"/v1/locations/{re.escape(LOCATION_ID)}(\?.*)?", json=load_fixture("location", "detail"))
 
-    q_journals = urlencode({"campaign_id": cid, "page": 1, "page_size": 50})
-    add("GET", f"/v1/journals?{q_journals}", json=load_fixture("journal", "list"))
-    add("GET", f"/v1/journals/{JOURNAL_ID}", json=load_fixture("journal", "detail"))
+    add_get(r"/v1/journals\?.*", json=load_fixture("journal", "list"))
+    add_get(rf"/v1/journals/{re.escape(JOURNAL_ID)}(\?.*)?", json=load_fixture("journal", "detail"))
 
-    q_folders = urlencode({"campaign_id": cid, "page": 1, "page_size": 50})
-    add("GET", f"/v1/journal-folders?{q_folders}", json=load_fixture("journal_folder", "list"))
-    add(
-        "GET",
-        f"/v1/journal-folders/{FOLDER_ID}",
-        json=load_fixture("journal_folder", "detail"),
-    )
+    add_get(r"/v1/journal-folders\?.*", json=load_fixture("journal_folder", "list"))
+    add_get(rf"/v1/journal-folders/{re.escape(FOLDER_ID)}(\?.*)?", json=load_fixture("journal_folder", "detail"))
 
     httpx_mock.add_response(
         method="GET",
-        url=f"{base}/v1/beats/{UNKNOWN_ID}",
+        url=re.compile(rf"^{re.escape(base)}/v1/beats/{re.escape(UNKNOWN_ID)}(\?.*)?$"),
         status_code=404,
         text='{"detail":"not found"}',
     )
@@ -143,8 +127,10 @@ async def archivist_http_mock(httpx_mock: Any) -> AsyncIterator[None]:
     import archivist_mcp.tools.items as items_mod
     import archivist_mcp.tools.journals as journals_mod
     import archivist_mcp.tools.links as links_mod
+    import archivist_mcp.tools.read_session as read_session_mod
     import archivist_mcp.tools.search as search_mod
     import archivist_mcp.tools.session_summary as session_summary_mod
+    import archivist_mcp.tools.wikilinks as wikilinks_mod
 
     search_mod.client = new_client
     ask_mod.client = new_client
@@ -153,6 +139,8 @@ async def archivist_http_mock(httpx_mock: Any) -> AsyncIterator[None]:
     journals_mod.client = new_client
     items_mod.client = new_client
     links_mod.client = new_client
+    read_session_mod.client = new_client
+    wikilinks_mod.client = new_client
 
     _register_default_api_routes(httpx_mock)
 

@@ -257,9 +257,12 @@ def clamp_page_size(page_size: int, cap: int = 50) -> int:
 
 
 def pagination_params(*, page: int, page_size: int, cursor: str | None) -> dict[str, Any]:
-    """Query params for list GETs; omits ``cursor`` when None."""
+    """Query params for list GETs; omits ``cursor`` when None.
+
+    Accepts ``page_size`` as the MCP-facing name; emits ``size`` on the wire.
+    """
     ps = clamp_page_size(page_size)
-    p: dict[str, Any] = {"page": page, "page_size": ps}
+    p: dict[str, Any] = {"page": page, "size": ps}
     if cursor is not None:
         p["cursor"] = cursor
     return p
