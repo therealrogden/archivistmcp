@@ -2,12 +2,10 @@
   "data": [
     {
       "id": "44444444-4444-4444-4444-444444444444",
-      "name": "Scrubbed Quest",
+      "quest_name": "Scrubbed Quest",
       "status": "active",
-      "objectives": [
-        {"completed": true},
-        {"completed": false}
-      ],
+      "objective_count": 2,
+      "completed_objective_count": 1,
       "updated_at": "2026-01-02T00:00:00Z",
       "tags": ["main", "side"]
     }

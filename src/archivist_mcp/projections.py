@@ -51,6 +51,19 @@ def has_speaker_character(entity: dict[str, Any]) -> bool:
     return entity.get("player") is not None
 
 
+def character_display_name(entity: dict[str, Any]) -> str | None:
+    """Return the list/detail display name for a character.
+
+    The Archivist API documents ``character_name``; some payloads also include
+    a normalized ``name``. Prefer ``name`` when both are present and non-empty.
+    """
+    for key in ("name", "character_name"):
+        v = entity.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
 def has_mechanics_item(entity: dict[str, Any]) -> bool:
     """Chunk 2: non-empty ``mechanics`` dict on the entity (no extra HTTP)."""
     m = entity.get("mechanics")
@@ -85,6 +98,26 @@ def completion_pct_quest(entity: dict[str, Any]) -> int:
         return 0
     done = sum(1 for o in objs if _objective_completed(o))
     return int(done * 100 // n)
+
+
+def _int_or_zero(v: Any) -> int:
+    return v if isinstance(v, int) and v >= 0 else 0
+
+
+def objective_count_quest_row(entity: dict[str, Any]) -> int:
+    if isinstance(entity.get("objectives"), list):
+        return objective_count_quest(entity)
+    return _int_or_zero(entity.get("objective_count"))
+
+
+def completion_pct_quest_row(entity: dict[str, Any]) -> int:
+    if isinstance(entity.get("objectives"), list):
+        return completion_pct_quest(entity)
+    total = _int_or_zero(entity.get("objective_count"))
+    done = _int_or_zero(entity.get("completed_objective_count"))
+    if total == 0:
+        return 0
+    return int(done * 100 // total)
 
 
 def is_root_parent_id(entity: dict[str, Any], key: str = "parent_id") -> bool:
@@ -136,17 +169,17 @@ def project_slim(entity: dict[str, Any], kind: ProjectionKind) -> dict[str, Any]
             tags = []
         return {
             "id": entity["id"],
-            "name": entity.get("name"),
+            "name": entity.get("quest_name"),
             "status": entity.get("status"),
-            "objective_count": objective_count_quest(entity),
-            "completion_pct": completion_pct_quest(entity),
+            "objective_count": objective_count_quest_row(entity),
+            "completion_pct": completion_pct_quest_row(entity),
             "updated_at": entity.get("updated_at"),
             "tags": tags,
         }
     if kind == "character":
         return {
             "id": entity["id"],
-            "name": entity.get("name"),
+            "name": character_display_name(entity),
             "type": entity.get("type"),
             "is_player": is_player_character(entity),
             "has_speaker": has_speaker_character(entity),

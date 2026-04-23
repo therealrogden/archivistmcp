@@ -6,6 +6,7 @@ import pytest
 
 from archivist_mcp.projections import (
     CONTENT_EXCERPT_MAX,
+    character_display_name,
     completion_pct_quest,
     content_excerpt,
     has_mechanics_item,
@@ -37,9 +38,10 @@ def _keys(kind: ProjectionKind) -> set[str]:
     elif kind == "quest":
         e = {
             "id": "1",
-            "name": "Q",
+            "quest_name": "Q",
             "status": "active",
-            "objectives": [],
+            "objective_count": 0,
+            "completed_objective_count": 0,
             "updated_at": None,
             "tags": [],
         }
@@ -103,6 +105,21 @@ def test_session_has_summary_and_summary_length() -> None:
     assert summary_length_session({**base, "summary": " recap "}) == len(" recap ")
 
 
+def test_character_display_name_accepts_api_wire() -> None:
+    assert character_display_name({"id": "1", "character_name": "  Staring Grimlock  "}) == "Staring Grimlock"
+    assert character_display_name({"id": "1", "name": "Short", "character_name": "Ignored"}) == "Short"
+    assert character_display_name({"id": "1"}) is None
+    assert character_display_name({"id": "1", "name": "", "character_name": "Fallback"}) == "Fallback"
+
+
+def test_project_slim_character_uses_character_name() -> None:
+    slim = project_slim(
+        {"id": "c1", "character_name": "Staring Grimlock", "type": "NPC"},
+        "character",
+    )
+    assert slim["name"] == "Staring Grimlock"
+
+
 def test_character_is_player_and_has_speaker() -> None:
     npc = {"id": "1", "name": "N", "type": "NPC"}
     assert is_player_character(npc) is False
@@ -131,6 +148,37 @@ def test_quest_completion_pct_and_zero_objectives() -> None:
         "objectives": [{"completed": True}, {"completed": True}],
     }
     assert completion_pct_quest(q_all) == 100
+
+
+def test_project_slim_quest_list_row_uses_quest_name_and_flat_counts() -> None:
+    row = {
+        "id": "1",
+        "quest_name": "Q",
+        "status": "active",
+        "objective_count": 2,
+        "completed_objective_count": 1,
+        "updated_at": None,
+        "tags": [],
+    }
+    slim = project_slim(row, "quest")
+    assert slim["name"] == "Q"
+    assert slim["objective_count"] == 2
+    assert slim["completion_pct"] == 50
+
+
+def test_project_slim_quest_detail_uses_objectives_array() -> None:
+    detail = {
+        "id": "1",
+        "quest_name": "Q",
+        "status": "active",
+        "objectives": [{"completed": True}, {"completed": False}],
+        "updated_at": None,
+        "tags": [],
+    }
+    slim = project_slim(detail, "quest")
+    assert slim["name"] == "Q"
+    assert slim["objective_count"] == 2
+    assert slim["completion_pct"] == 50
 
 
 def test_location_and_journal_folder_is_root() -> None:
